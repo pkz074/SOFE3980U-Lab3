@@ -1,29 +1,44 @@
-stage('Containerize & Deploy') {
+pipeline {
+    agent any
+    tools {
+        maven 'maven3' 
+    }
+    stages {
+        stage('Test') {
             steps {
-                container('gcloud') {
-                    script {
-                        withCredentials([
-                            file(credentialsId: 'service_account', variable: 'KEY'),
-                            string(credentialsId: 'project_id', variable: 'PROJECT'),
-                            string(credentialsId: 'repo_path', variable: 'REPO'),
-                            string(credentialsId: 'cluster_name', variable: 'CLUSTER'),
-                            string(credentialsId: 'cluster_zone', variable: 'ZONE')
-                        ]) {
-                            sh 'gcloud auth activate-service-account --key-file=$KEY'
-                            sh 'gcloud config set project $PROJECT'
-                            
-                            // 1. Build & Push
-                            sh 'docker build -t $REPO:latest .'
-                            sh 'docker push $REPO:latest'
-                            
-                            // 2. Deploy to GKE
-                            sh 'gcloud container clusters get-credentials $CLUSTER --zone $ZONE'
-                            
-                            // Apply your specific YAML files
-                            sh 'kubectl apply -f binarycalculator-deploy.yaml'
-                            sh 'kubectl apply -f binarycalculator-service.yaml'
-                        }
+                sh 'mvn test'
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+        stage('Containerize & Deploy') {
+            steps {
+                // Here we use the gcloud tools to push to the registry
+                script {
+                    withCredentials([
+                        file(credentialsId: 'service_account', variable: 'KEY'),
+                        string(credentialsId: 'project_id', variable: 'PROJECT'),
+                        string(credentialsId: 'repo_path', variable: 'REPO'),
+                        string(credentialsId: 'cluster_name', variable: 'CLUSTER'),
+                        string(credentialsId: 'cluster_zone', variable: 'ZONE')
+                    ]) {
+                        sh 'gcloud auth activate-service-account --key-file=$KEY'
+                        sh 'gcloud config set project $PROJECT'
+                        
+                        // Build and Push
+                        sh 'docker build -t $REPO:latest .'
+                        sh 'docker push $REPO:latest'
+                        
+                        // Deploy
+                        sh 'gcloud container clusters get-credentials $CLUSTER --zone $ZONE'
+                        sh 'kubectl apply -f binarycalculator-deploy.yaml'
+                        sh 'kubectl apply -f binarycalculator-service.yaml'
                     }
                 }
             }
         }
+    }
+}
